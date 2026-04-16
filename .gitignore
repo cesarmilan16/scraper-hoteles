@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+env/
+ENV/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.DS_Store
+Thumbs.db
+
+# Playwright / browser artifacts
+playwright-report/
+test-results/
+
+# Local output datasets from scrapers
+*_reviews.json
+google_travel_*.json
+google_reviews.json
+travel_*.json
+dataset_hotel-reviews-multi-source_*.json
