@@ -1,0 +1,9 @@
+{
+  "actorSpecification": 1,
+  "name": "google-travel-reviews",
+  "title": "Google Maps / Travel — reviews",
+  "version": "0.0.1",
+  "dockerfile": "./Dockerfile",
+  "readme": "./README.md",
+  "input": "./.actor/input_schema.json"
+}

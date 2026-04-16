@@ -1,0 +1,82 @@
+{
+  "title": "Entrada multi-fuente (TripAdvisor + Booking + Google)",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "enableTripAdvisor": {
+      "title": "Activar TripAdvisor",
+      "type": "boolean",
+      "description": "Activa o desactiva la extracción desde TripAdvisor.",
+      "default": true,
+      "editor": "checkbox"
+    },
+    "tripadvisorUrl": {
+      "title": "TripAdvisor URL",
+      "type": "string",
+      "description": "URL del hotel en TripAdvisor (obligatoria si TripAdvisor está activo).",
+      "editor": "textfield"
+    },
+    "enableBooking": {
+      "title": "Activar Booking",
+      "type": "boolean",
+      "description": "Activa o desactiva la extracción desde Booking.com.",
+      "default": true,
+      "editor": "checkbox"
+    },
+    "bookingUrl": {
+      "title": "Booking URL",
+      "type": "string",
+      "description": "URL del hotel en Booking.com (obligatoria si Booking está activo).",
+      "editor": "textfield"
+    },
+    "bookingPagename": {
+      "title": "Booking slug/pagename (opcional)",
+      "type": "string",
+      "description": "Si está vacío se deduce automáticamente de bookingUrl.",
+      "editor": "textfield"
+    },
+    "enableGoogle": {
+      "title": "Activar Google",
+      "type": "boolean",
+      "description": "Activa o desactiva la extracción desde Google Maps / Google Travel.",
+      "default": true,
+      "editor": "checkbox"
+    },
+    "googleUrl": {
+      "title": "Google URL",
+      "type": "string",
+      "description": "URL de Google Maps o Google Travel (obligatoria si Google está activo).",
+      "editor": "textfield"
+    },
+    "googleHeadless": {
+      "title": "Google headless",
+      "type": "boolean",
+      "description": "En Apify debe ser true salvo depuración.",
+      "default": true,
+      "editor": "checkbox"
+    },
+    "maxReviews": {
+      "title": "Máximo de reviews (común)",
+      "type": "integer",
+      "description": "Límite por plataforma. 0 o vacío = sin límite.",
+      "editor": "number"
+    },
+    "delay": {
+      "title": "Delay HTTP [min, max]",
+      "type": "array",
+      "description": "Intervalo de delay para TripAdvisor y Booking (por defecto [5, 12]).",
+      "editor": "json"
+    },
+    "proxySettings": {
+      "title": "Configuración de proxy",
+      "type": "object",
+      "description": "Proxy de Apify. RESIDENTIAL recomendado. Sin proxy, las IPs datacenter de Apify suelen ser bloqueadas.",
+      "editor": "proxy",
+      "sectionCaption": "Proxy",
+      "default": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"]
+      }
+    }
+  }
+}

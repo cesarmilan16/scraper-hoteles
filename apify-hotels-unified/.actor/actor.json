@@ -1,0 +1,9 @@
+{
+  "actorSpecification": 1,
+  "name": "hotel-reviews-multi-source",
+  "title": "Hotel Reviews Multi-Source (TripAdvisor + Booking + Google)",
+  "version": "0.1",
+  "dockerfile": "./Dockerfile",
+  "readme": "./README.md",
+  "input": "./input_schema.json"
+}

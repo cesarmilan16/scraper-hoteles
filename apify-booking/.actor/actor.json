@@ -1,0 +1,9 @@
+{
+  "actorSpecification": 1,
+  "name": "booking-reviews",
+  "title": "Booking.com — reviews de hotel",
+  "version": "0.0.1",
+  "dockerfile": "./Dockerfile",
+  "readme": "./README.md",
+  "input": "./.actor/input_schema.json"
+}
