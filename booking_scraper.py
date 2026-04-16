@@ -103,27 +103,23 @@ def parse_review_block(block: BeautifulSoup, page_num: int) -> Review:
 
     title = _text(block.select_one("h3.c-review-block__title"))
 
-    # Positivo / negativo
-    labels = block.select("span.bui-u-sr-only")
-    bodies = block.select("span.c-review__body")
+    # Positivo / negativo — emparejar cada body con su label dentro del mismo row
     positive = negative = None
-    for label, body in zip(labels, bodies):
-        lt = label.get_text(strip=True).lower()
-        bt = body.get_text(" ", strip=True)
+    for body_el in block.select("span.c-review__body"):
+        bt = body_el.get_text(" ", strip=True)
         if not bt:
             continue
-        if "gust" in lt or "liked" in lt or "positiv" in lt:
-            positive = bt
-        elif "no gust" in lt or "disliked" in lt or "negativ" in lt:
+        row = body_el.parent
+        label_el = row.select_one("span.bui-u-sr-only") if row else None
+        lt = label_el.get_text(strip=True).lower() if label_el else ""
+        if "no gust" in lt or "disliked" in lt or "negativ" in lt:
             negative = bt
+        elif "gust" in lt or "liked" in lt or "positiv" in lt:
+            positive = bt
         elif positive is None:
             positive = bt
         else:
             negative = bt
-
-    # Si solo hay un body sin labels claros
-    if not positive and not negative and bodies:
-        positive = bodies[0].get_text(" ", strip=True) or None
 
     # Fechas
     dates = block.select("span.c-review-block__date")

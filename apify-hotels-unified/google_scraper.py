@@ -94,6 +94,7 @@ class Review:
     body:         Optional[str]
     date_posted:  Optional[str]
     source:       str
+    source_url:   str
     local_guide:  bool
     scraped_at:   str
 
@@ -305,7 +306,7 @@ def scroll_reviews(
 # Parseo
 # ---------------------------------------------------------------------------
 
-def parse_reviews(page: Page, travel_mode: bool = False) -> List[Review]:
+def parse_reviews(page: Page, travel_mode: bool = False, source_url: str = "") -> List[Review]:
     expand_review_texts(page)
 
     raw = page.evaluate("""(travelMode) => {
@@ -419,6 +420,7 @@ def parse_reviews(page: Page, travel_mode: bool = False) -> List[Review]:
             author=r.get("author"), rating=r.get("rating"),
             body=r.get("body"), date_posted=r.get("date_posted"),
             source=r.get("source", "Google"),
+            source_url=source_url,
             local_guide=r.get("local_guide", False), scraped_at=ts,
         )
         for r in raw
@@ -548,7 +550,7 @@ def scrape_hotel(
             )
             print(f"  {loaded} reviews detectadas en el DOM", file=sys.stderr)
 
-            reviews = parse_reviews(page, travel_mode=travel_mode)
+            reviews = parse_reviews(page, travel_mode=travel_mode, source_url=url)
             OWNER_REPLY_NOISE = {"respuesta del propietario", "owner's response", "response from the owner"}
             deduped: List[Review] = []
             seen = set()

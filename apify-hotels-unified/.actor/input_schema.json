@@ -55,6 +55,46 @@
       "default": true,
       "editor": "checkbox"
     },
+    "maintenanceMode": {
+      "title": "Modo mantenimiento (check + update)",
+      "type": "boolean",
+      "description": "Hace check ligero y solo scrapea en detalle si detecta cambios.",
+      "default": false,
+      "editor": "checkbox"
+    },
+    "checkLimit": {
+      "title": "Check limit",
+      "type": "integer",
+      "description": "Reviews a leer por plataforma para comparar cambios (default: 3).",
+      "default": 3,
+      "editor": "number"
+    },
+    "updateLimit": {
+      "title": "Update limit",
+      "type": "integer",
+      "description": "Reviews a scrapear cuando hay cambios (default: 25).",
+      "default": 25,
+      "editor": "number"
+    },
+    "fingerprintTopN": {
+      "title": "Fingerprint top N",
+      "type": "integer",
+      "description": "Cuántas reviews del check se usan para calcular huella de cambio (default: 3).",
+      "default": 3,
+      "editor": "number"
+    },
+    "stateKeyValueStoreName": {
+      "title": "Nombre del Key-Value Store (estado)",
+      "type": "string",
+      "description": "Almacén compartido entre ejecuciones para STATE (default: hotel-reviews-maintenance-state). Ignorado si usas stateKeyValueStoreId.",
+      "editor": "textfield"
+    },
+    "stateKeyValueStoreId": {
+      "title": "ID del Key-Value Store (estado)",
+      "type": "string",
+      "description": "Opcional: ID fijo del KVS en Apify para el estado. Si lo rellenas, tiene prioridad sobre el nombre.",
+      "editor": "textfield"
+    },
     "maxReviews": {
       "title": "Máximo de reviews (común)",
       "type": "integer",

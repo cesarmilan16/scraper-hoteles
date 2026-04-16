@@ -16,6 +16,10 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Cursor / Windows artifacts
+.cursor/
+nul
+
 # Playwright / browser artifacts
 playwright-report/
 test-results/

@@ -201,17 +201,23 @@ def save_output(
 
 class Fetcher:
     def __init__(self, proxy_url: Optional[str] = None) -> None:
-        self._proxy_url = proxy_url
+        self._proxy_url_base = proxy_url
+        self._session_counter = 0
         self._session = self._make_session()
         self._warmed_up = False
         self._consecutive_blocks = 0
 
+    def _rotated_proxy(self) -> Optional[str]:
+        if not self._proxy_url_base:
+            return None
+        self._session_counter += 1
+        if "session-" in self._proxy_url_base:
+            return re.sub(r"session-[^,@:]+", f"session-ta{self._session_counter}", self._proxy_url_base)
+        return self._proxy_url_base.replace("://", f"://session-ta{self._session_counter},", 1)
+
     def _make_session(self) -> requests.Session:
-        proxies = (
-            {"http": self._proxy_url, "https": self._proxy_url}
-            if self._proxy_url
-            else None
-        )
+        proxy = self._rotated_proxy()
+        proxies = {"http": proxy, "https": proxy} if proxy else None
         return requests.Session(impersonate="chrome", proxies=proxies)
 
     def _new_session(self) -> None:

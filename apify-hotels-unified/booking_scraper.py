@@ -53,6 +53,7 @@ class Review:
     traveler_type: Optional[str]
     nights:       Optional[str]
     page_num:     int
+    review_page_url: str
     scraped_at:   str
 
 
@@ -88,7 +89,7 @@ def _text(el) -> Optional[str]:
 # Parseo de reviews
 # ---------------------------------------------------------------------------
 
-def parse_review_block(block: BeautifulSoup, page_num: int) -> Review:
+def parse_review_block(block: BeautifulSoup, page_num: int, review_page_url: str = "") -> Review:
     author = _text(block.select_one("span.bui-avatar-block__title"))
     country = _text(block.select_one("span.bui-avatar-block__subtitle"))
 
@@ -103,27 +104,23 @@ def parse_review_block(block: BeautifulSoup, page_num: int) -> Review:
 
     title = _text(block.select_one("h3.c-review-block__title"))
 
-    # Positivo / negativo
-    labels = block.select("span.bui-u-sr-only")
-    bodies = block.select("span.c-review__body")
+    # Positivo / negativo — emparejar cada body con su label dentro del mismo row
     positive = negative = None
-    for label, body in zip(labels, bodies):
-        lt = label.get_text(strip=True).lower()
-        bt = body.get_text(" ", strip=True)
+    for body_el in block.select("span.c-review__body"):
+        bt = body_el.get_text(" ", strip=True)
         if not bt:
             continue
-        if "gust" in lt or "liked" in lt or "positiv" in lt:
-            positive = bt
-        elif "no gust" in lt or "disliked" in lt or "negativ" in lt:
+        row = body_el.parent
+        label_el = row.select_one("span.bui-u-sr-only") if row else None
+        lt = label_el.get_text(strip=True).lower() if label_el else ""
+        if "no gust" in lt or "disliked" in lt or "negativ" in lt:
             negative = bt
+        elif "gust" in lt or "liked" in lt or "positiv" in lt:
+            positive = bt
         elif positive is None:
             positive = bt
         else:
             negative = bt
-
-    # Si solo hay un body sin labels claros
-    if not positive and not negative and bodies:
-        positive = bodies[0].get_text(" ", strip=True) or None
 
     # Fechas
     dates = block.select("span.c-review-block__date")
@@ -146,14 +143,14 @@ def parse_review_block(block: BeautifulSoup, page_num: int) -> Review:
         positive=positive, negative=negative,
         stay_date=stay_date, review_date=review_date,
         room_type=room_type, traveler_type=traveler_type, nights=nights,
-        page_num=page_num, scraped_at=now_iso(),
+        page_num=page_num, review_page_url=review_page_url, scraped_at=now_iso(),
     )
 
 
-def extract_page_reviews(html: str, page_num: int) -> List[Review]:
+def extract_page_reviews(html: str, page_num: int, review_page_url: str = "") -> List[Review]:
     soup = BeautifulSoup(html, "html.parser")
     blocks = soup.select(".c-review-block")
-    return [parse_review_block(b, page_num) for b in blocks]
+    return [parse_review_block(b, page_num, review_page_url) for b in blocks]
 
 
 def get_total_pages(html: str) -> Optional[int]:
@@ -207,16 +204,23 @@ def save_output(
 
 class Fetcher:
     def __init__(self, proxy_url: Optional[str] = None) -> None:
-        self._proxy_url = proxy_url
+        self._proxy_url_base = proxy_url
+        self._session_counter = 0
         self._session = self._make_session()
         self._consecutive_blocks = 0
 
+    def _rotated_proxy(self) -> Optional[str]:
+        """Rota la IP del proxy de Apify inyectando un session-id diferente."""
+        if not self._proxy_url_base:
+            return None
+        self._session_counter += 1
+        if "session-" in self._proxy_url_base:
+            return re.sub(r"session-[^,@:]+", f"session-bk{self._session_counter}", self._proxy_url_base)
+        return self._proxy_url_base.replace("://", f"://session-bk{self._session_counter},", 1)
+
     def _make_session(self) -> requests.Session:
-        proxies = (
-            {"http": self._proxy_url, "https": self._proxy_url}
-            if self._proxy_url
-            else None
-        )
+        proxy = self._rotated_proxy()
+        proxies = {"http": proxy, "https": proxy} if proxy else None
         return requests.Session(impersonate="chrome", proxies=proxies)
 
     def _new_session(self) -> None:
@@ -297,8 +301,15 @@ def scrape_hotel(
     first_html = fetcher.fetch(pagename, 0)
     total_pages = get_total_pages(first_html)
 
+    def _page_url(off: int) -> str:
+        return (
+            f"{REVIEWLIST_URL}?cc1=es&dist=1"
+            f"&pagename={pagename}&type=total"
+            f"&rows={REVIEWS_PER_PAGE}&offset={off}"
+        )
+
     if 1 not in already_done:
-        for r in extract_page_reviews(first_html, 1):
+        for r in extract_page_reviews(first_html, 1, _page_url(0)):
             all_reviews.append(asdict(r))
 
     if total_pages:
@@ -325,7 +336,7 @@ def scrape_hotel(
 
         try:
             html = fetcher.fetch(pagename, offset)
-            reviews = extract_page_reviews(html, page_num)
+            reviews = extract_page_reviews(html, page_num, _page_url(offset))
         except Exception as exc:
             print(f"    [pag {page_num:>3}] Error: {exc}", file=sys.stderr)
             save_output(output_path, all_reviews, offset, total_pages, pagename)
