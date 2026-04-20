@@ -135,22 +135,43 @@ def _normalize_text(raw: Any) -> str:
     return str(raw).strip().lower()
 
 
-def _review_fingerprint(review: dict[str, Any]) -> str:
+def _normalize_whitespace(raw: str) -> str:
+    return " ".join(raw.split())
+
+
+def _stable_google_body(raw_body: Any) -> str:
+    body = _normalize_text(raw_body)
+    # Google often appends expandable text hints that are unstable for fingerprinting.
+    body = body.replace(" ver más", "").replace(" ... ver más", "")
+    return _normalize_whitespace(body)
+
+
+def _review_fingerprint(review: dict[str, Any], platform: str) -> str:
+    body_value = review.get("body") or review.get("positive") or review.get("title")
+    normalized_body = _normalize_text(body_value)
     payload = {
         "author": _normalize_text(review.get("author")),
-        "date": _normalize_text(review.get("date_posted") or review.get("review_date")),
         "rating": str(review.get("rating") or review.get("score") or ""),
-        "body": _normalize_text(review.get("body") or review.get("positive") or review.get("title")),
+        "body": _normalize_whitespace(normalized_body),
     }
+    if platform == "google":
+        # Relative dates like "Hace 4 meses" drift with time and cause false positives.
+        # Keep only fields that are usually stable between checks.
+        payload["body"] = _stable_google_body(body_value)
+        payload["source"] = _normalize_text(review.get("source"))
+        payload["local_guide"] = str(bool(review.get("local_guide")))
+    else:
+        payload["date"] = _normalize_text(review.get("date_posted") or review.get("review_date"))
+
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
-def _platform_fingerprint(reviews: list[Any], top_n: int) -> str:
+def _platform_fingerprint(reviews: list[Any], top_n: int, platform: str) -> str:
     hashes: list[str] = []
     for item in reviews[:top_n]:
         if isinstance(item, dict):
-            hashes.append(_review_fingerprint(item))
+            hashes.append(_review_fingerprint(item, platform))
         else:
             hashes.append(hashlib.sha1(str(item).encode("utf-8")).hexdigest())
     joined = "|".join(hashes)
@@ -311,7 +332,7 @@ async def main() -> None:
                         check_data = await _run_tripadvisor(tripadvisor_url, check_limit, delay, proxy_url)
                         check_reviews = check_data.get("reviews") or []
                         old_fp = str(state.get("tripadvisor", {}).get("fingerprint") or "")
-                        new_fp = _platform_fingerprint(check_reviews, fingerprint_top_n)
+                        new_fp = _platform_fingerprint(check_reviews, fingerprint_top_n, "tripadvisor")
                         changed = bool(check_reviews) and old_fp != new_fp
                         initial_seed = not old_fp
                         should_update = changed or initial_seed
@@ -405,7 +426,7 @@ async def main() -> None:
                         check_data = await _run_booking(booking_url, pagename, check_limit, delay, proxy_url)
                         check_reviews = check_data.get("reviews") or []
                         old_fp = str(state.get("booking", {}).get("fingerprint") or "")
-                        new_fp = _platform_fingerprint(check_reviews, fingerprint_top_n)
+                        new_fp = _platform_fingerprint(check_reviews, fingerprint_top_n, "booking")
                         changed = bool(check_reviews) and old_fp != new_fp
                         initial_seed = not old_fp
                         should_update = changed or initial_seed
@@ -501,7 +522,7 @@ async def main() -> None:
                         check_data = await _run_google(google_url, check_limit, google_headless, None)
                         check_reviews = check_data.get("reviews") or []
                         old_fp = str(state.get("google", {}).get("fingerprint") or "")
-                        new_fp = _platform_fingerprint(check_reviews, fingerprint_top_n)
+                        new_fp = _platform_fingerprint(check_reviews, fingerprint_top_n, "google")
                         changed = bool(check_reviews) and old_fp != new_fp
                         initial_seed = not old_fp
                         should_update = changed or initial_seed
