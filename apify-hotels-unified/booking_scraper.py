@@ -229,7 +229,7 @@ class Fetcher:
     def _is_blocked(self, html: str) -> bool:
         return any(ind in html for ind in BLOCKED_INDICATORS)
 
-    def fetch(self, pagename: str, offset: int, retries: int = 5) -> str:
+    def fetch(self, pagename: str, offset: int, retries: int = 8, timeout: int = 60) -> str:
         url = (
             f"{REVIEWLIST_URL}?cc1=es&dist=1"
             f"&pagename={pagename}&type=total"
@@ -238,7 +238,7 @@ class Fetcher:
 
         for attempt in range(1, retries + 1):
             try:
-                resp = self._session.get(url, timeout=30)
+                resp = self._session.get(url, timeout=timeout)
 
                 if resp.status_code == 200:
                     if self._is_blocked(resp.text):
@@ -267,7 +267,13 @@ class Fetcher:
                 raise
             except Exception as exc:
                 if attempt < retries:
-                    time.sleep(5 * attempt)
+                    self._new_session()
+                    wait = 8 * attempt + random.uniform(1, 4)
+                    print(
+                        f"    [RED] Reintento {attempt}/{retries} tras error ({exc.__class__.__name__}), esperando {wait:.0f}s...",
+                        file=sys.stderr,
+                    )
+                    time.sleep(wait)
                     continue
                 raise RuntimeError(f"Error de red: {exc}") from exc
 
