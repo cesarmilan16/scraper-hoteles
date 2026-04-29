@@ -15,7 +15,7 @@ import sys
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from curl_cffi import requests
 from bs4 import BeautifulSoup
@@ -26,6 +26,9 @@ from bs4 import BeautifulSoup
 
 REVIEWS_PER_PAGE = 10
 BASE_DOMAIN = "https://www.tripadvisor.es"
+GRAPHQL_URL = f"{BASE_DOMAIN}/data/graphql/ids"
+REVIEWS_GRAPHQL_QUERY_ID = "ef1a9f94012220d3"
+IMPERSONATE_BROWSER = "chrome136"
 
 DEFAULT_URL = (
     f"{BASE_DOMAIN}/Hotel_Review-g1064230-d1757900-Reviews-"
@@ -98,6 +101,14 @@ def build_page_url(base_url: str, offset: int) -> str:
     return re.sub(r"(Reviews-)", f"\\1or{offset}-", base_url, count=1)
 
 
+def parse_location_ids(url: str) -> Tuple[Optional[int], Optional[int]]:
+    geo_match = re.search(r"-g(\d+)-", url)
+    location_match = re.search(r"-d(\d+)-", url)
+    geo_id = int(geo_match.group(1)) if geo_match else None
+    location_id = int(location_match.group(1)) if location_match else None
+    return geo_id, location_id
+
+
 def get_total_reviews(soup: BeautifulSoup) -> Optional[int]:
     for sel in ("div.JajTY", "div.JRWqg"):
         el = soup.select_one(sel)
@@ -165,6 +176,67 @@ def extract_page_reviews(html: str, page_url: str, page_num: int) -> List[Review
     return []
 
 
+def _photo_url(photo_wrapper: dict[str, Any]) -> Optional[str]:
+    photo = photo_wrapper.get("photo") or {}
+    dynamic = photo.get("photoSizeDynamic") or {}
+    template = dynamic.get("urlTemplate")
+    if not template:
+        return None
+    return template.replace("{width}", "1200").replace("{height}", "1200")
+
+
+def normalize_graphql_review(
+    review: dict[str, Any],
+    base_url: str,
+    offset: int,
+    position: int,
+) -> dict[str, Any]:
+    profile = review.get("userProfile") or {}
+    hometown = profile.get("hometown") or {}
+    hometown_location = hometown.get("location") or {}
+    hometown_names = hometown_location.get("additionalNames") or {}
+    trip_info = review.get("tripInfo") or {}
+    tip_data = (((review.get("reviewTip") or {}).get("responseData") or {}).get("tips") or [])
+    route = (
+        ((review.get("reviewDetailPageWrapper") or {}).get("reviewDetailPageRoute") or {})
+        .get("url")
+    )
+    photos = [
+        url for url in (_photo_url(photo) for photo in (review.get("photos") or []))
+        if url
+    ]
+
+    return {
+        "review_id": review.get("id"),
+        "author": profile.get("displayName") or review.get("username"),
+        "username": profile.get("username") or review.get("username"),
+        "rating": review.get("rating"),
+        "title": review.get("title"),
+        "body": review.get("text"),
+        "date_posted": review.get("publishedDate") or review.get("createdDate"),
+        "created_date": review.get("createdDate"),
+        "published_date": review.get("publishedDate"),
+        "location": (
+            hometown_names.get("long")
+            or hometown_names.get("name")
+            or hometown.get("fallbackString")
+        ),
+        "travel_tip": tip_data[0].get("body") if tip_data else None,
+        "stay_date": trip_info.get("stayDate"),
+        "trip_type": trip_info.get("tripType"),
+        "language": review.get("language"),
+        "original_language": review.get("originalLanguage"),
+        "translation_type": review.get("translationType"),
+        "helpful_votes": review.get("helpfulVotes"),
+        "photos": photos,
+        "photo_ids": review.get("photoIds") or [],
+        "page_num": offset // REVIEWS_PER_PAGE + 1,
+        "position": position,
+        "source_url": f"{BASE_DOMAIN}{route}" if route else base_url,
+        "scraped_at": now_iso(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Guardado incremental
 # ---------------------------------------------------------------------------
@@ -218,7 +290,7 @@ class Fetcher:
     def _make_session(self) -> requests.Session:
         proxy = self._rotated_proxy()
         proxies = {"http": proxy, "https": proxy} if proxy else None
-        return requests.Session(impersonate="chrome", proxies=proxies)
+        return requests.Session(impersonate=IMPERSONATE_BROWSER, proxies=proxies)
 
     def _new_session(self) -> None:
         self._session = self._make_session()
@@ -282,10 +354,169 @@ class Fetcher:
 
         raise RuntimeError(f"Fallo tras {retries} intentos")
 
+    def fetch_graphql_reviews(
+        self,
+        location_id: int,
+        base_url: str,
+        offset: int,
+        limit: int = REVIEWS_PER_PAGE,
+        retries: int = 5,
+    ) -> Tuple[int, List[dict[str, Any]]]:
+        payload = [{
+            "variables": {
+                "locationId": location_id,
+                "filters": [],
+                "limit": limit,
+                "offset": offset,
+                "sortType": None,
+                "sortBy": "SERVER_DETERMINED",
+                # Tripadvisor uses this as the UI language. With empty filters it still
+                # returns reviews from every original language.
+                "language": "es",
+                "doMachineTranslation": True,
+                "photosPerReviewLimit": 3,
+            },
+            "extensions": {"preRegisteredQueryId": REVIEWS_GRAPHQL_QUERY_ID},
+        }]
+        headers = {
+            "accept": "*/*",
+            "accept-language": "es-ES,es;q=0.6",
+            "content-type": "application/json",
+            "origin": BASE_DOMAIN,
+            "referer": base_url,
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "same-origin",
+            "sec-fetch-site": "same-origin",
+            "user-agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/147.0.0.0 Safari/537.36"
+            ),
+        }
+
+        for attempt in range(1, retries + 1):
+            try:
+                resp = self._session.post(
+                    GRAPHQL_URL,
+                    headers=headers,
+                    json=payload,
+                    timeout=45,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    page = data[0]["data"]["ReviewsProxy_getReviewListPageForLocation"][0]
+                    return int(page["totalCount"]), page.get("reviews") or []
+
+                if resp.status_code in (400, 403, 429, 500, 503):
+                    self._new_session()
+                    if attempt < retries:
+                        time.sleep(3 * attempt + random.uniform(0.5, 2.0))
+                        continue
+
+                raise RuntimeError(f"HTTP {resp.status_code}")
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                if attempt < retries:
+                    time.sleep(3 * attempt + random.uniform(0.5, 2.0))
+                    continue
+                raise RuntimeError(f"Error GraphQL: {exc}") from exc
+
+        raise RuntimeError(f"Fallo GraphQL tras {retries} intentos")
+
 
 # ---------------------------------------------------------------------------
 # Scraping de un hotel
 # ---------------------------------------------------------------------------
+
+def scrape_hotel_graphql(
+    fetcher: Fetcher,
+    base_url: str,
+    output_path: Path,
+    resume: bool,
+    limit: Optional[int],
+    delay_range: Tuple[float, float],
+) -> int:
+    _, location_id = parse_location_ids(base_url)
+    if location_id is None:
+        raise RuntimeError("No se pudo extraer locationId de la URL de TripAdvisor")
+
+    existing = load_output(output_path)
+    if resume and existing.get("reviews") and existing.get("hotel_url", "").split("?")[0] == base_url.split("?")[0]:
+        all_reviews = existing["reviews"]
+        seen_ids = {r.get("review_id") for r in all_reviews if isinstance(r, dict)}
+        start_offset = len(all_reviews)
+        print(f"  Reanudando GraphQL: {len(all_reviews)} reviews", file=sys.stderr)
+    else:
+        all_reviews = []
+        seen_ids = set()
+        start_offset = 0
+
+    total = None
+    effective_total = limit or 10**9
+    offset = start_offset - (start_offset % REVIEWS_PER_PAGE)
+    if offset == 0 and all_reviews:
+        offset = len(all_reviews)
+
+    while offset < effective_total:
+        if all_reviews or offset:
+            time.sleep(random.uniform(*delay_range))
+
+        page_total, page_reviews = fetcher.fetch_graphql_reviews(
+            location_id=location_id,
+            base_url=base_url,
+            offset=offset,
+            limit=REVIEWS_PER_PAGE,
+        )
+        total = page_total
+        if limit:
+            effective_total = min(total, limit)
+        else:
+            effective_total = total
+
+        if not page_reviews:
+            break
+
+        added = 0
+        for idx, review in enumerate(page_reviews):
+            review_id = review.get("id")
+            if review_id in seen_ids:
+                continue
+            if limit is not None and len(all_reviews) >= limit:
+                break
+            seen_ids.add(review_id)
+            all_reviews.append(
+                normalize_graphql_review(
+                    review,
+                    base_url=base_url,
+                    offset=offset,
+                    position=offset + idx + 1,
+                )
+            )
+            added += 1
+
+        save_output(
+            output_path,
+            all_reviews,
+            min(offset + REVIEWS_PER_PAGE, effective_total),
+            total,
+            base_url,
+            completed=(len(all_reviews) >= effective_total),
+        )
+        pct = f"{len(all_reviews)}/{total}" if total else str(len(all_reviews))
+        print(
+            f"    [offset {offset:>3}] {added} reviews GraphQL | Total: {pct}",
+            file=sys.stderr,
+        )
+
+        if len(all_reviews) >= effective_total or added == 0:
+            break
+        offset += REVIEWS_PER_PAGE
+
+    done = total is not None and len(all_reviews) >= (limit or total)
+    save_output(output_path, all_reviews, len(all_reviews), total, base_url, completed=done)
+    return len(all_reviews)
+
 
 def scrape_hotel(
     fetcher: Fetcher,
@@ -295,6 +526,11 @@ def scrape_hotel(
     limit: Optional[int],
     delay_range: Tuple[float, float],
 ) -> int:
+    try:
+        return scrape_hotel_graphql(fetcher, base_url, output_path, resume, limit, delay_range)
+    except Exception as exc:
+        print(f"  GraphQL no disponible ({exc}); usando HTML clasico.", file=sys.stderr)
+
     existing = load_output(output_path)
     if resume and existing.get("reviews") and existing.get("hotel_url", "").split("?")[0] == base_url.split("?")[0]:
         all_reviews = existing["reviews"]
