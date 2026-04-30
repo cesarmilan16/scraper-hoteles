@@ -52,6 +52,7 @@ class Review:
     room_type:    Optional[str]
     traveler_type: Optional[str]
     nights:       Optional[str]
+    review_id:    Optional[str]
     review_url:   Optional[str]
     page_num:     int
     scraped_at:   str
@@ -70,6 +71,7 @@ def review_to_output_dict(review: Review) -> dict:
         "room_type": review.room_type,
         "traveler_type": review.traveler_type,
         "nights": review.nights,
+        "reviewId": review.review_id,
         "reviewUrl": review.review_url,
         "page_num": review.page_num,
         "scraped_at": review.scraped_at,
@@ -172,6 +174,7 @@ def parse_review_block(block: BeautifulSoup, page_num: int, pagename: str) -> Re
         positive=positive, negative=negative,
         stay_date=stay_date, review_date=review_date,
         room_type=room_type, traveler_type=traveler_type, nights=nights,
+        review_id=review_token,
         review_url=review_url,
         page_num=page_num, scraped_at=now_iso(),
     )
