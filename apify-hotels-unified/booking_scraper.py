@@ -213,7 +213,7 @@ def load_output(path: Path) -> Dict:
 
 def save_output(
     path: Path, reviews: List[dict], next_offset: int,
-    total_pages: Optional[int], pagename: str,
+    total_pages: Optional[int], pagename: str, completed: bool = False,
 ) -> None:
     path.write_text(
         json.dumps({
@@ -221,7 +221,7 @@ def save_output(
             "total_pages": total_pages,
             "scraped":     len(reviews),
             "next_offset": next_offset,
-            "complete":    total_pages is not None and next_offset >= total_pages * REVIEWS_PER_PAGE,
+            "complete":    completed or (total_pages is not None and next_offset >= total_pages * REVIEWS_PER_PAGE),
             "reviews":     reviews,
         }, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -339,6 +339,8 @@ def scrape_hotel(
 
     if 1 not in already_done:
         for r in extract_page_reviews(first_html, 1, pagename):
+            if limit and len(all_reviews) >= limit:
+                break
             all_reviews.append(review_to_output_dict(r))
 
     if total_pages:
@@ -380,6 +382,8 @@ def scrape_hotel(
         else:
             empty_streak = 0
             for r in reviews:
+                if limit and len(all_reviews) >= limit:
+                    break
                 all_reviews.append(review_to_output_dict(r))
 
         if page_num % 5 == 0 or not reviews:
@@ -391,7 +395,12 @@ def scrape_hotel(
         offset += REVIEWS_PER_PAGE
         page_num += 1
 
-    save_output(output_path, all_reviews, offset, total_pages, pagename)
+    done = (
+        (limit is not None and len(all_reviews) >= limit)
+        or (total_pages is not None and offset >= total_pages * REVIEWS_PER_PAGE)
+        or (limit is None and empty_streak >= 3)
+    )
+    save_output(output_path, all_reviews, offset, total_pages, pagename, completed=done)
     return len(all_reviews)
 
 
