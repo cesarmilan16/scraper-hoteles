@@ -12,7 +12,7 @@ import random
 import re
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -52,8 +52,28 @@ class Review:
     room_type:    Optional[str]
     traveler_type: Optional[str]
     nights:       Optional[str]
+    review_url:   Optional[str]
     page_num:     int
     scraped_at:   str
+
+
+def review_to_output_dict(review: Review) -> dict:
+    return {
+        "author": review.author,
+        "country": review.country,
+        "score": review.score,
+        "title": review.title,
+        "positive": review.positive,
+        "negative": review.negative,
+        "stay_date": review.stay_date,
+        "review_date": review.review_date,
+        "room_type": review.room_type,
+        "traveler_type": review.traveler_type,
+        "nights": review.nights,
+        "reviewUrl": review.review_url,
+        "page_num": review.page_num,
+        "scraped_at": review.scraped_at,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +108,17 @@ def _text(el) -> Optional[str]:
 # Parseo de reviews
 # ---------------------------------------------------------------------------
 
-def parse_review_block(block: BeautifulSoup, page_num: int) -> Review:
+def build_review_url(pagename: str, review_token: Optional[str]) -> str:
+    """
+    URL moderna de ficha del hotel (vista comentarios).
+    """
+    base = f"https://www.booking.com/hotel/es/{pagename}.es.html"
+    if review_token:
+        return f"{base}?activeTab=main&review_url={review_token}#tab-reviews"
+    return f"{base}#tab-reviews"
+
+
+def parse_review_block(block: BeautifulSoup, page_num: int, pagename: str) -> Review:
     author = _text(block.select_one("span.bui-avatar-block__title"))
     country = _text(block.select_one("span.bui-avatar-block__subtitle"))
 
@@ -136,20 +166,24 @@ def parse_review_block(block: BeautifulSoup, page_num: int) -> Review:
     room_type = info_items[0] if len(info_items) > 0 else None
     nights = info_items[1] if len(info_items) > 1 else None
     traveler_type = info_items[2] if len(info_items) > 2 else None
+    container = block.find_parent("li", class_="review_list_new_item_block")
+    review_token = container.get("data-review-url") if container else None
+    review_url = build_review_url(pagename, review_token)
 
     return Review(
         author=author, country=country, score=score, title=title,
         positive=positive, negative=negative,
         stay_date=stay_date, review_date=review_date,
         room_type=room_type, traveler_type=traveler_type, nights=nights,
+        review_url=review_url,
         page_num=page_num, scraped_at=now_iso(),
     )
 
 
-def extract_page_reviews(html: str, page_num: int) -> List[Review]:
+def extract_page_reviews(html: str, page_num: int, pagename: str) -> List[Review]:
     soup = BeautifulSoup(html, "html.parser")
     blocks = soup.select(".c-review-block")
-    return [parse_review_block(b, page_num) for b in blocks]
+    return [parse_review_block(b, page_num, pagename) for b in blocks]
 
 
 def get_total_pages(html: str) -> Optional[int]:
@@ -290,8 +324,8 @@ def scrape_hotel(
     total_pages = get_total_pages(first_html)
 
     if 1 not in already_done:
-        for r in extract_page_reviews(first_html, 1):
-            all_reviews.append(asdict(r))
+        for r in extract_page_reviews(first_html, 1, pagename):
+            all_reviews.append(review_to_output_dict(r))
 
     if total_pages:
         total_est = total_pages * REVIEWS_PER_PAGE
@@ -317,7 +351,7 @@ def scrape_hotel(
 
         try:
             html = fetcher.fetch(pagename, offset)
-            reviews = extract_page_reviews(html, page_num)
+            reviews = extract_page_reviews(html, page_num, pagename)
         except Exception as exc:
             print(f"    [pag {page_num:>3}] Error: {exc}", file=sys.stderr)
             save_output(output_path, all_reviews, offset, total_pages, pagename)
@@ -332,7 +366,7 @@ def scrape_hotel(
         else:
             empty_streak = 0
             for r in reviews:
-                all_reviews.append(asdict(r))
+                all_reviews.append(review_to_output_dict(r))
 
         if page_num % 5 == 0 or not reviews:
             save_output(output_path, all_reviews, offset + REVIEWS_PER_PAGE, total_pages, pagename)

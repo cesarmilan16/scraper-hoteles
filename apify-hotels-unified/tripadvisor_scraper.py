@@ -13,7 +13,7 @@ import random
 import re
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -66,6 +66,23 @@ class Review:
     page_num:     int
     source_url:   str
     scraped_at:   str
+
+
+def review_to_output_dict(review: Review) -> dict:
+    return {
+        "author": review.author,
+        "rating": review.rating,
+        "title": review.title,
+        "body": review.body,
+        "date_posted": review.date_posted,
+        "location": review.location,
+        "travel_tip": review.travel_tip,
+        "stay_date": review.stay_date,
+        "trip_type": review.trip_type,
+        "page_num": review.page_num,
+        "reviewUrl": review.source_url,
+        "scraped_at": review.scraped_at,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +224,7 @@ def normalize_graphql_review(
     ]
 
     return {
-        "review_id": review.get("id"),
+        "reviewId": review.get("id"),
         "author": profile.get("displayName") or review.get("username"),
         "username": profile.get("username") or review.get("username"),
         "rating": review.get("rating"),
@@ -232,7 +249,7 @@ def normalize_graphql_review(
         "photo_ids": review.get("photoIds") or [],
         "page_num": offset // REVIEWS_PER_PAGE + 1,
         "position": position,
-        "source_url": f"{BASE_DOMAIN}{route}" if route else base_url,
+        "reviewUrl": f"{BASE_DOMAIN}{route}" if route else base_url,
         "scraped_at": now_iso(),
     }
 
@@ -444,7 +461,7 @@ def scrape_hotel_graphql(
     existing = load_output(output_path)
     if resume and existing.get("reviews") and existing.get("hotel_url", "").split("?")[0] == base_url.split("?")[0]:
         all_reviews = existing["reviews"]
-        seen_ids = {r.get("review_id") for r in all_reviews if isinstance(r, dict)}
+        seen_ids = {r.get("reviewId") for r in all_reviews if isinstance(r, dict)}
         start_offset = len(all_reviews)
         print(f"  Reanudando GraphQL: {len(all_reviews)} reviews", file=sys.stderr)
     else:
@@ -548,7 +565,7 @@ def scrape_hotel(
 
     if 1 not in already_done:
         for r in extract_page_reviews(first_html, base_url, 1):
-            all_reviews.append(asdict(r))
+            all_reviews.append(review_to_output_dict(r))
 
     effective_total = total or 1000
     if limit:
@@ -591,7 +608,7 @@ def scrape_hotel(
         else:
             empty_streak = 0
             for r in reviews:
-                all_reviews.append(asdict(r))
+                all_reviews.append(review_to_output_dict(r))
 
         if page_num % 5 == 0 or not reviews:
             save_output(output_path, all_reviews, offset + REVIEWS_PER_PAGE, total, base_url)

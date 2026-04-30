@@ -13,7 +13,7 @@ import random
 import re
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -94,9 +94,30 @@ class Review:
     body:         Optional[str]
     date_posted:  Optional[str]
     source:       str
-    source_url:   str
     local_guide:  bool
     scraped_at:   str
+    reviewer_id:  Optional[str] = None
+    review_id:    Optional[str] = None
+    review_url:   Optional[str] = None
+    review_detailed_rating: Optional[dict] = None
+
+
+def review_to_output_dict(review: Review) -> dict:
+    data = {
+        "author": review.author,
+        "rating": review.rating,
+        "body": review.body,
+        "date_posted": review.date_posted,
+        "source": review.source,
+        "local_guide": review.local_guide,
+        "scraped_at": review.scraped_at,
+        "reviewerId": review.reviewer_id,
+        "reviewUrl": review.review_url,
+        "reviewDetailedRating": review.review_detailed_rating or {},
+    }
+    if review.review_id:
+        data["reviewId"] = review.review_id
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -420,8 +441,9 @@ def parse_reviews(page: Page, travel_mode: bool = False, source_url: str = "") -
             author=r.get("author"), rating=r.get("rating"),
             body=r.get("body"), date_posted=r.get("date_posted"),
             source=r.get("source", "Google"),
-            source_url=source_url,
-            local_guide=r.get("local_guide", False), scraped_at=ts,
+            local_guide=r.get("local_guide", False),
+            scraped_at=ts,
+            review_url=source_url,
         )
         for r in raw
     ]
@@ -573,7 +595,7 @@ def scrape_hotel(
             if limit:
                 reviews = reviews[:limit]
 
-            all_dicts = [asdict(r) for r in reviews]
+            all_dicts = [review_to_output_dict(r) for r in reviews]
             n = len(all_dicts)
             done = expected is None or (
                 expected > 0 and n >= int(expected * 0.95)

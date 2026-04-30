@@ -13,7 +13,7 @@ import random
 import re
 import sys
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -63,6 +63,23 @@ class Review:
     page_num:     int
     source_url:   str
     scraped_at:   str
+
+
+def review_to_output_dict(review: Review) -> dict:
+    return {
+        "author": review.author,
+        "rating": review.rating,
+        "title": review.title,
+        "body": review.body,
+        "date_posted": review.date_posted,
+        "location": review.location,
+        "travel_tip": review.travel_tip,
+        "stay_date": review.stay_date,
+        "trip_type": review.trip_type,
+        "page_num": review.page_num,
+        "reviewUrl": review.source_url,
+        "scraped_at": review.scraped_at,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +314,7 @@ def scrape_hotel(
 
     if 1 not in already_done:
         for r in extract_page_reviews(first_html, base_url, 1):
-            all_reviews.append(asdict(r))
+            all_reviews.append(review_to_output_dict(r))
 
     effective_total = total or 1000
     if limit:
@@ -340,7 +357,7 @@ def scrape_hotel(
         else:
             empty_streak = 0
             for r in reviews:
-                all_reviews.append(asdict(r))
+                all_reviews.append(review_to_output_dict(r))
 
         if page_num % 5 == 0 or not reviews:
             save_output(output_path, all_reviews, offset + REVIEWS_PER_PAGE, total, base_url)
