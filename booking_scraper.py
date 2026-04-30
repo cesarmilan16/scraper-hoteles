@@ -316,11 +316,17 @@ def scrape_hotel(
         all_reviews = existing["reviews"]
         start_offset = existing.get("next_offset", 0)
         already_done = {r["page_num"] for r in all_reviews}
+        seen_review_ids = {
+            r.get("reviewId")
+            for r in all_reviews
+            if isinstance(r, dict) and r.get("reviewId")
+        }
         print(f"  Reanudando: {len(all_reviews)} reviews, offset={start_offset}", file=sys.stderr)
     else:
         all_reviews = []
         start_offset = 0
         already_done = set()
+        seen_review_ids = set()
 
     # Primera pagina
     first_html = fetcher.fetch(pagename, 0)
@@ -330,7 +336,13 @@ def scrape_hotel(
         for r in extract_page_reviews(first_html, 1, pagename):
             if limit and len(all_reviews) >= limit:
                 break
-            all_reviews.append(review_to_output_dict(r))
+            row = review_to_output_dict(r)
+            rid = row.get("reviewId")
+            if rid and rid in seen_review_ids:
+                continue
+            if rid:
+                seen_review_ids.add(rid)
+            all_reviews.append(row)
 
     if total_pages:
         total_est = total_pages * REVIEWS_PER_PAGE
@@ -373,7 +385,13 @@ def scrape_hotel(
             for r in reviews:
                 if limit and len(all_reviews) >= limit:
                     break
-                all_reviews.append(review_to_output_dict(r))
+                row = review_to_output_dict(r)
+                rid = row.get("reviewId")
+                if rid and rid in seen_review_ids:
+                    continue
+                if rid:
+                    seen_review_ids.add(rid)
+                all_reviews.append(row)
 
         if page_num % 5 == 0 or not reviews:
             save_output(output_path, all_reviews, offset + REVIEWS_PER_PAGE, total_pages, pagename)
