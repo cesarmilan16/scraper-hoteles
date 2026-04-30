@@ -129,6 +129,8 @@ class Review:
     review_id:    Optional[str] = None
     review_url:   Optional[str] = None
     review_detailed_rating: Optional[dict] = None
+    response_from_owner_text: Optional[str] = None
+    response_from_owner_date: Optional[str] = None
 
 
 def review_to_output_dict(review: Review) -> dict:
@@ -143,6 +145,8 @@ def review_to_output_dict(review: Review) -> dict:
         "reviewerId": review.reviewer_id,
         "reviewUrl": review.review_url,
         "reviewDetailedRating": review.review_detailed_rating or {},
+        "responseFromOwnerText": review.response_from_owner_text,
+        "responseFromOwnerDate": review.response_from_owner_date,
     }
     if review.review_id:
         data["reviewId"] = review.review_id
@@ -242,6 +246,20 @@ def parse_detailed_rating(raw: List) -> dict:
     return out
 
 
+def parse_owner_response(raw: List) -> tuple[Optional[str], Optional[str]]:
+    if len(raw) <= 5 or not raw[5]:
+        return None, None
+    owner_block = raw[5]
+    try:
+        parts = owner_block[0] if len(owner_block) > 0 and isinstance(owner_block[0], list) else []
+        text_parts = [p.strip() for p in parts if isinstance(p, str) and p.strip()]
+        response_text = " ".join(text_parts) if text_parts else None
+        response_date = owner_block[1] if len(owner_block) > 1 and isinstance(owner_block[1], str) else None
+        return response_text, response_date
+    except Exception:
+        return None, None
+
+
 def build_google_review_url(review_id: Optional[str], fid: Optional[str]) -> Optional[str]:
     if not review_id or not fid or ":" not in fid:
         return None
@@ -274,6 +292,7 @@ def review_from_travel_rpc_group(group: List, scraped_at: str, fid: Optional[str
 
         review_id = raw[8] if len(raw) > 8 else None
         review_url = build_google_review_url(review_id, fid)
+        response_text, response_date = parse_owner_response(raw)
 
         return Review(
             author=author,
@@ -287,6 +306,8 @@ def review_from_travel_rpc_group(group: List, scraped_at: str, fid: Optional[str
             review_id=review_id,
             review_url=review_url,
             review_detailed_rating=parse_detailed_rating(raw),
+            response_from_owner_text=response_text,
+            response_from_owner_date=response_date,
         )
     except Exception:
         return None
@@ -410,7 +431,7 @@ def collect_travel_rpc_reviews(
             print(f"    ... {len(reviews)} reviews", file=sys.stderr)
         time.sleep(random.uniform(0.25, 0.8))
 
-    return reviews, cursor is None
+    return reviews, not cursor
 
 
 def filter_reviews_by_origin(reviews: List[Review], origin: str) -> List[Review]:
@@ -793,7 +814,7 @@ def scrape_hotel_travel_rpc(
         if limit:
             reviews = reviews[:limit]
         all_dicts = [review_to_output_dict(r) for r in reviews]
-        save_output(output_path, all_dicts, url, complete=exhausted and (not limit or len(all_dicts) < limit))
+        save_output(output_path, all_dicts, url, complete=exhausted)
         return len(all_dicts)
 
     first_post_data: Optional[str] = None
@@ -886,7 +907,7 @@ def scrape_hotel_travel_rpc(
         deduped = deduped[:limit]
 
     all_dicts = [review_to_output_dict(r) for r in deduped]
-    complete = cursor is None and (not limit or len(all_dicts) < limit)
+    complete = not cursor
     save_output(output_path, all_dicts, url, complete=complete)
     return len(all_dicts)
 

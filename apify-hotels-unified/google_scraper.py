@@ -597,7 +597,8 @@ def scrape_hotel(
 
             all_dicts = [review_to_output_dict(r) for r in reviews]
             n = len(all_dicts)
-            done = expected is None or (
+            hit_limit = limit is not None and n >= limit
+            done = hit_limit or expected is None or (
                 expected > 0 and n >= int(expected * 0.95)
             )
             save_output(output_path, all_dicts, url, complete=done, expected_total=expected)
